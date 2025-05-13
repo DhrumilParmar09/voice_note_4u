@@ -1,0 +1,186 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Voice Note Diary (Offline)</title>
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+  <h1>🎤 Voice Note Diary</h1>
+
+  <div class="container">
+    <label for="description">Note Description:</label>
+    <input type="text" id="description" placeholder="What's this note about?" />
+
+    <button id="startBtn">Start  Recording yet</button>
+    <button id="stopBtn" disabled>Stop Recording</button>
+
+    <audio id="audioPlayback" controls></audio>
+    <br />
+    <button id="saveBtn" disabled>Save Note</button>
+    <button id="downloadBtn" disabled>Download Note</button>
+
+    <hr />
+    <label for="search">🔍 Search Notes:</label>
+    <input type="text" id="search" placeholder="Type date or description..." />
+
+    <h2>🗂️ Saved Notes</h2>
+    <ul id="noteList"></ul>
+
+    <h2>📊 Recording History</h2>
+    <table id="historyTable">
+      <thead>
+        <tr>
+          <th>Date</th>
+          <th>Description</th>
+          <th>Playback</th>
+        </tr>
+      </thead>
+      <tbody id="historyBody"></tbody>
+    </table>
+  </div>
+  
+
+  <!-- Popup message -->
+  <div id="popup" class="popup">Note saved successfully!</div>
+
+  <script>
+    let mediaRecorder;
+    let audioChunks = [];
+
+    const startBtn = document.getElementById("startBtn");
+    const stopBtn = document.getElementById("stopBtn");
+    const saveBtn = document.getElementById("saveBtn");
+    const downloadBtn = document.getElementById("downloadBtn");
+    const audioPlayback = document.getElementById("audioPlayback");
+    const descriptionInput = document.getElementById("description");
+    const noteList = document.getElementById("noteList");
+    const searchInput = document.getElementById("search");
+    const popup = document.getElementById("popup");
+    const historyBody = document.getElementById("historyBody");
+
+    let currentBlob = null;
+
+    const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent);
+    const isSafari = /^((?!chrome|android).)*safari/i.test(navigator.userAgent);
+
+    if (isIOS && isSafari) {
+      alert("Voice recording is not supported on iOS Safari. Please try Chrome on Android or use a desktop browser.");
+      startBtn.disabled = true;
+    }
+
+    startBtn.onclick = async () => {
+      if (isIOS && isSafari) return;
+      try {
+        const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+        mediaRecorder = new MediaRecorder(stream);
+        audioChunks = [];
+        mediaRecorder.ondataavailable = event => audioChunks.push(event.data);
+        mediaRecorder.onstop = () => {
+          currentBlob = new Blob(audioChunks, { type: 'audio/webm' });
+          audioPlayback.src = URL.createObjectURL(currentBlob);
+          saveBtn.disabled = false;
+          downloadBtn.disabled = false;
+        };
+        mediaRecorder.start();
+        startBtn.disabled = true;
+        stopBtn.disabled = false;
+        startBtn.style.backgroundColor = '#4CAF50';
+        stopBtn.style.backgroundColor = '';
+      } catch (err) {
+        alert("Microphone access denied or not available.");
+        console.error("Error accessing microphone:", err);
+      }
+    };
+
+    stopBtn.onclick = () => {
+      mediaRecorder.stop();
+      startBtn.disabled = false;
+      stopBtn.disabled = true;
+      stopBtn.style.backgroundColor = '#f44336';
+      startBtn.style.backgroundColor = '';
+    };
+
+    saveBtn.onclick = () => {
+      if (!currentBlob) return;
+      const reader = new FileReader();
+      reader.onloadend = () => {
+        const base64 = reader.result;
+        const date = new Date().toLocaleString();
+        const description = descriptionInput.value || "No description";
+
+        const savedNotes = JSON.parse(localStorage.getItem("voiceNotes") || "[]");
+        savedNotes.push({ base64, date, description });
+        localStorage.setItem("voiceNotes", JSON.stringify(savedNotes));
+
+        descriptionInput.value = "";
+        saveBtn.disabled = true;
+        downloadBtn.disabled = true;
+        showPopup("✅ Note saved successfully!");
+        loadNotes();
+      };
+      reader.readAsDataURL(currentBlob);
+    };
+
+    downloadBtn.onclick = () => {
+      const a = document.createElement("a");
+      a.href = audioPlayback.src;
+      a.download = `VoiceNote-${new Date().toISOString()}.webm`;
+      a.click();
+    };
+
+    function loadNotes() {
+      noteList.innerHTML = "";
+      historyBody.innerHTML = "";
+      const savedNotes = JSON.parse(localStorage.getItem("voiceNotes") || "[]");
+      const searchTerm = searchInput.value.toLowerCase();
+
+      savedNotes.forEach((note, index) => {
+        if (
+          note.description.toLowerCase().includes(searchTerm) ||
+          note.date.toLowerCase().includes(searchTerm)
+        ) {
+          const li = document.createElement("li");
+          li.className = "note-item";
+          li.innerHTML = `
+            <strong>${note.date}</strong><br/>
+            ${note.description}<br/>
+            <audio controls src="${note.base64}"></audio>
+            <br/>
+            <button onclick="deleteNote(${index})">🗑️ Delete</button>
+          `;
+          noteList.appendChild(li);
+
+          const row = document.createElement("tr");
+          row.innerHTML = `
+            <td>${note.date}</td>
+            <td>${note.description}</td>
+            <td><audio controls src="${note.base64}"></audio></td>
+          `;
+          historyBody.appendChild(row);
+        }
+      });
+    }
+
+    function showPopup(message) {
+      popup.textContent = message;
+      popup.classList.add("show");
+      setTimeout(() => {
+        popup.classList.remove("show");
+      }, 2500);
+    }
+
+    function deleteNote(index) {
+      const savedNotes = JSON.parse(localStorage.getItem("voiceNotes") || "[]");
+      savedNotes.splice(index, 1);
+      localStorage.setItem("voiceNotes", JSON.stringify(savedNotes));
+      showPopup("🗑️ Note deleted!");
+      loadNotes();
+    }
+
+    searchInput.addEventListener("input", loadNotes);
+    loadNotes();
+  </script>
+</body>
+</html>
